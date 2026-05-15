@@ -1,6 +1,6 @@
 # Attack Vectors Reference (2/4)
 
-200 total attack vectors — Token Integration, Proxy & Upgradeability, MEV & Front-Running, DeFi Protocol-Specific
+230 total attack vectors — Token Integration, Proxy & Upgradeability, MEV & Front-Running, DeFi Protocol-Specific, Order/Market Mechanics
 
 ---
 
@@ -259,3 +259,56 @@
 
 - **D:** `shares = deposit * totalShares / totalAssets` rounds to zero for small deposits. Depositor gets 0 shares, tokens stuck in vault.
 - **FP:** Minimum deposit amount enforced. Virtual shares offset prevents zero-share deposits.
+
+---
+
+**216. Partial Fill / Limit Order Manipulation**
+
+- **D:** Limit order or batch auction system allows partial fills. Attacker fills dust amounts to grief makers (gas cost > fill value), or manipulates fill sequence to extract value. Pattern: filling 1 wei of a 1000 ETH order repeatedly — each fill triggers expensive storage writes, reward updates, or fee calculations. Also: partial fill leaves the order in an exploitable state (remaining amount rounds to zero, fees already collected).
+- **FP:** Minimum fill amount enforced: `require(fillAmount >= minFill)`. Gas costs borne by taker. Partial fill state is atomic and consistent. No per-fill side effects beyond the fill itself.
+
+**217. Conditional Token / Position Accounting Error**
+
+- **D:** In prediction markets, options, or conditional token frameworks: split, merge, redeem, or settlement operations have inconsistent accounting. Pattern: split 100 tokens into YES/NO positions, trade YES, merge fewer than 100 YES+NO back but receive full 100 collateral due to accounting error. Also: burning condition tokens without redeeming underlying, double-redeem after market resolution, or minting positions without locking collateral.
+- **FP:** Split/merge/redeem amounts validated against position balances. Total collateral locked == total positions outstanding invariant enforced. Settlement uses atomic burn-and-transfer.
+
+**218. Resolution/Settlement Oracle Front-Running**
+
+- **D:** Settlement or resolution of markets/positions/options uses an oracle value or admin input that can be front-run. Attacker sees resolution transaction in mempool, takes a favorable position before it executes. Pattern: `resolve(outcomeId)` reads current oracle price — attacker front-runs with a trade at pre-resolution price. Also: insurance claim resolution, liquidation triggers, epoch transitions with reward distribution.
+- **FP:** Commit-reveal for resolution. Resolution price uses historical oracle value (TWAP or snapshot). No trading allowed during resolution window. Resolution is permissionless with delay.
+
+**219. DEX Hook/Plugin State Manipulation**
+
+- **D:** Hooks or plugins in DEX/vault systems (Uniswap V4 style hooks, ERC-4626 strategy plugins, modular smart account modules) can manipulate parameters, extract MEV, or drain funds if not properly sandboxed. Pattern: `beforeSwap` hook front-runs the swap by trading ahead, `afterSwap` hook extracts surplus. Strategy plugin reports inflated returns. Account module bypasses spending limits.
+- **FP:** Hooks are immutable/governance-approved. Hook actions bounded (can't modify swap amounts by more than fee). Plugin permissions scoped. Gas limits on hook execution.
+
+**220. Stale Share Price / Exchange Rate in Same-Block**
+
+- **D:** Share price or exchange rate is calculated from state that was manipulated earlier in the same block (or same transaction). Pattern: donate tokens to vault → vault's `totalAssets()` increases → mint shares at inflated price → withdraw at new price. Differs from first-depositor because it works on established vaults with existing deposits. Also: interest accrual manipulation when `accrue()` and `deposit()` happen in the same block.
+- **FP:** Deposit uses pre-donation price (snapshot before operation). Minimum delay between operations. Internal accounting unaffected by donations. Interest accrued at last-block timestamp.
+
+**221. Fee Calculation Compounding / Layering Error**
+
+- **D:** Multiple fee layers (protocol fee, LP fee, referral fee, performance fee) applied incorrectly — fees calculated on already-fee'd amounts creating double-counting, or fee ordering creates arbitrage. Pattern: protocol takes 1% of gross, then LP takes 1% of gross → total is 2% but intended to be sequential (0.99 * 0.99 = 1.99%). Or: fee rounds down to 0 for small amounts, allowing fee-free micro-transactions at scale.
+- **FP:** Fees applied in correct order on remaining amount. Fee calculation tested for edge cases (0, 1 wei, max uint). Total fee capped. Fee-on-zero-amount handled.
+
+**222. Reward Token Same as Staking/Deposit Token**
+
+- **D:** Reward token is the same as the staking token or deposit token. Claiming rewards inflates the contract's balance, breaking calculations that use `balanceOf(address(this))` for total staked amount. Pattern: `rewardToken == stakingToken`, calling `claimReward()` increases `balanceOf(address(this))` which is used as `totalStaked` in `rewardPerToken()` calculation, diluting all stakers' future rewards.
+- **FP:** Separate internal tracking for staked vs reward balances. `totalStaked` uses internal accounting, not `balanceOf`. Reward token explicitly required to differ from stake token.
+
+**223. Permissionless Pool/Market Creation with Malicious Parameters**
+
+- **D:** Permissionless pool, market, or vault creation allows attacker-controlled parameters that create traps for depositors. Pattern: create pool with fee = 99.9%, or create market with attacker-controlled oracle, or create vault pointing to attacker's strategy that steals deposits. Users interact with the pool thinking it's legitimate (similar name/tokens to established pools).
+- **FP:** Pool parameters bounded by protocol (max fee, oracle whitelist). Only governance can create pools. Pool factory validates all parameters. UI/registry only shows verified pools.
+
+**224. Flash Loan Callback Reentrancy via Protocol's Own Flash Feature**
+
+- **D:** Protocol offers flash loans AND has deposit/withdraw functions. Attacker uses flash loan callback to manipulate protocol state mid-flash-loan. Pattern: flash borrow 1000 tokens → in callback, deposit the 1000 tokens → mint 1000 shares → repay flash loan from a different source → withdraw 1000 tokens via shares. Net effect: 1000 free shares.
+- **FP:** Flash loan uses reentrancy guard that also protects deposit/withdraw. Flash loan checks repayment before callback. Balance snapshot before flash prevents deposit-during-flash.
+
+**225. Order Execution Trust / Resolver Manipulation**
+
+- **D:** In intent-based or meta-transaction systems (1inch Fusion, CoW Protocol, permit-based), the executor/resolver/relayer is trusted to execute orders fairly. Malicious resolver can: extract MEV from user orders, execute at worse-than-limit price and pocket the difference, delay execution to exploit price movements, or sandwich the execution. Pattern: resolver fills a limit order at the minimum acceptable price and keeps the surplus.
+- **FP:** Surplus returned to user. Maximum solver/resolver fee enforced. Competition among resolvers. On-chain price verification against oracle.
+

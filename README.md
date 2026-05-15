@@ -1,7 +1,7 @@
 # CritFindsAudit v2
 
 Attacker-grade EVM/Solidity security audit skill for Claude Code.
-200 attack vectors. 6 parallel agents. Automated recon. Zero false-positive tolerance.
+230 attack vectors. 6 parallel agents. Automated recon. Zero false-positive tolerance.
 
 ## Install
 
@@ -19,7 +19,7 @@ Restart Claude Code after installation.
 
 | Command | Description |
 |---------|-------------|
-| `/critfindsaudit` | Full audit — 4 vector-scan agents, 200 vectors |
+| `/critfindsaudit` | Full audit — 4 vector-scan agents, 230 vectors |
 | `/critfindsaudit DEEP` | Full + adversarial reasoning (opus) + invariant analysis |
 | `/critfindsaudit QUICK` | Rapid triage — 2 agents, criticals only |
 | `/critfindsaudit path/to/File.sol` | Audit specific file(s) |
@@ -40,7 +40,7 @@ Turn 4: Merge, deduplicate, severity-sort, compound attack chains, generate repo
 
 | Feature | CritFindsAudit v2 | Other tools |
 |---------|-------------------|-------------|
-| Attack vectors | **200** with D:/FP: format | 170 or fewer |
+| Attack vectors | **230** with D:/FP: format | 170 or fewer |
 | Agents (DEEP mode) | **6** (4 scan + adversarial + invariant) | 5 or fewer |
 | Automated recon | Framework, compiler, deps, SLOC, entry points, danger scan | None |
 | Danger keyword scan | 25+ high-signal patterns with hotspot ranking | None |
@@ -56,14 +56,14 @@ Turn 4: Merge, deduplicate, severity-sort, compound attack chains, generate repo
 | Counter-argument testing | Adversarial agent challenges its own findings | Not included |
 | Recon context sharing | Danger scan results fed to every agent | Not included |
 
-## Attack Vector Coverage (200 vectors)
+## Attack Vector Coverage (230 vectors)
 
 | File | Vectors | Categories |
 |------|---------|-----------|
-| attack-vectors-1.md | V1-V50 | Reentrancy (5 types), Access Control (8), Arithmetic (6), Oracle (7), Flash Loan (4), Signatures (6), EVM Core (7) |
-| attack-vectors-2.md | V51-V100 | Token Integration (10), Proxy & Upgradeability (10), MEV (6), DeFi Protocol — Vaults, AMMs, Lending, Staking (24) |
-| attack-vectors-3.md | V101-V150 | Cross-Chain & Bridge (10), Gas & DoS (9), EVM Hazards (10), Governance (7), NFT (9) |
-| attack-vectors-4.md | V151-V200 | Compiler (5), Low-Level Assembly (10), Permit/Approval (5), Economic Attacks (10), Advanced (20) |
+| attack-vectors-1.md | V1-V50, V211-V215 | Reentrancy (5 types), Access Control (8), Arithmetic (6), Oracle (7), Flash Loan (4), Signatures (6), EVM Core (7), Callbacks & External Calls (5) |
+| attack-vectors-2.md | V51-V100, V216-V225 | Token Integration (10), Proxy & Upgradeability (10), MEV (6), DeFi Protocol (24), Order/Market Mechanics (10) |
+| attack-vectors-3.md | V101-V150, V226-V230 | Cross-Chain & Bridge (10), Gas & DoS (9), EVM Hazards (10), Governance (7), NFT (9), L2 & Settlement (5) |
+| attack-vectors-4.md | V151-V210 | Compiler (5), Low-Level Assembly (10), Permit/Approval (5), Economic Attacks (10), Advanced (20), Input Validation & Trust Boundaries (10) |
 
 ## Severity & Confidence
 
@@ -108,12 +108,12 @@ Findings use IDs: `CRITICAL-01`, `HIGH-01`, `MEDIUM-01`. Each includes:
     report-formatting.md                — Report template with PoC section
     agents/
       vector-scan-agent.md              — Scanner agent instructions
-      adversarial-reasoning-agent.md    — DEEP mode adversarial agent (7-pass)
+      adversarial-reasoning-agent.md    — DEEP mode adversarial agent (8-pass)
     attack-vectors/
-      attack-vectors-1.md               — V1-V50 (200 total)
-      attack-vectors-2.md               — V51-V100
-      attack-vectors-3.md               — V101-V150
-      attack-vectors-4.md               — V151-V200
+      attack-vectors-1.md               — V1-V50, V211-V215 (230 total)
+      attack-vectors-2.md               — V51-V100, V216-V225
+      attack-vectors-3.md               — V101-V150, V226-V230
+      attack-vectors-4.md               — V151-V210
   assets/
     findings/                           — Saved audit reports
     docs/                               — Project context docs

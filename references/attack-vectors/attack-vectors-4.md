@@ -1,6 +1,6 @@
 # Attack Vectors Reference (4/4)
 
-200 total attack vectors — Compiler, Low-Level Assembly, Permit/Approval, Staking/Lending Advanced, Economic Attacks
+230 total attack vectors — Compiler, Low-Level Assembly, Permit/Approval, Staking/Lending Advanced, Economic Attacks, Input Validation & Trust Boundaries
 
 ---
 
@@ -263,3 +263,55 @@
 
 - **D:** `try target.call() {} catch {}` silently swallows all failures. Critical errors (out-of-gas, invalid opcode) handled same as expected failures. Missing error propagation.
 - **FP:** Specific error types caught. Critical failures re-reverted. Error reason logged via event.
+
+---
+
+**201. Unvalidated Fund-Critical Parameter**
+
+- **D:** User-supplied address or amount parameter is used directly in `transfer`, `safeTransfer`, `call{value:}`, or `safeTransferFrom` without validating it against protocol state, prior computation, or expected values. The function trusts a caller-supplied token address, recipient, or amount to be correct. Pattern: `_creditToken` passed by user, used in `safeTransfer(_creditToken, recipient, amount)` without checking `_creditToken == expectedOutputToken`.
+- **FP:** Parameter is validated against on-chain state before use (e.g., `require(_token == pool.outputToken())`). Parameter is hardcoded or set by admin. Parameter is msg.sender (self-referential, no trust issue).
+
+**202. msg.value vs Amount Parameter Mismatch**
+
+- **D:** Payable function accepts both `msg.value` (ETH sent) and an `_amount` parameter (or similar), but never enforces `require(msg.value >= _amount)` or equivalent. The function uses `_amount` in `call{value: _amount}` or internal accounting, allowing the caller to specify an amount greater than the ETH they actually sent. If the contract has accumulated ETH (via `receive()`, prior transactions, or `selfdestruct` forcing), the caller drains the contract's balance. Pattern: `anyToAnySwap{value:0}(amount=contractBalance, nativeSend=true)` drains the Router.
+- **FP:** `require(msg.value >= _amount)` or `require(msg.value == _amount)` enforced. Function is not payable. Amount derived from `msg.value` directly (not a separate parameter). Contract never holds ETH balance.
+
+**203. Token Address Confusion in Multi-Hop Paths**
+
+- **D:** In router/aggregator/multi-hop swap patterns, the output token of hop N does not match the input token of hop N+1, or the final credit/output token does not match the actual output of the last swap. User supplies the path or token addresses, and the contract does not verify continuity. Pattern: `swapPath = [TokenA→TokenB]` but `_creditToken = TokenC` — contract sends TokenC from its own balance instead of the actual swap output.
+- **FP:** Path continuity validated: `require(path[i].outputToken == path[i+1].inputToken)`. Credit token derived from the actual swap output, not user-supplied. Single-hop only (no path confusion possible).
+
+**204. Stranded Funds Drainage**
+
+- **D:** Contract has `receive()` or `fallback()` (can receive ETH), or can accumulate tokens from failed transfers, rounding dust, direct sends, or `selfdestruct` forcing. An external function allows spending these accumulated balances on behalf of any caller. Pattern: Router accumulates ETH from partial swaps; `anyToAnySwap()` uses `address(this).balance` as spendable funds for the next caller.
+- **FP:** No public function spends contract's own accumulated balance for callers. Sweep/rescue function is admin-only. Internal accounting tracks all balances — untracked funds are inaccessible. Contract cannot receive unexpected funds.
+
+**205. Unchecked Native Value Forwarding**
+
+- **D:** Contract forwards ETH to another contract via `call{value: amount}(data)` or `payable(to).transfer(amount)` where `amount` is derived from a parameter or storage, NOT from `msg.value`. The contract spends its own ETH balance without verifying the caller provided the funds. Pattern: `market.swap{value: _amount}(params)` where `_amount` is a user parameter and the Router pays from `address(this).balance`.
+- **FP:** Amount is always `msg.value` or derived from `msg.value` with refund of excess. `require(msg.value >= amount)` before forwarding. Contract is sole owner of its ETH (no external callers can trigger spend).
+
+**206. User-Controlled Token in Transfer**
+
+- **D:** `safeTransfer`, `transfer`, or `safeTransferFrom` uses a token address supplied by the caller (calldata parameter) without verifying it matches the expected token for the operation. Attacker calls with an unrelated token the contract holds, draining that token's balance. Pattern: `IERC20(_creditToken).safeTransfer(msg.sender, amount)` where `_creditToken` is user-supplied and could be any token the contract holds.
+- **FP:** Token address validated against pool/pair/vault's registered tokens. Token address is immutable/storage, not from calldata. Allowance-based transfer (contract can only send what it's approved for, which is limited to correct tokens).
+
+**207. Missing msg.value Accounting in Payable Function**
+
+- **D:** Payable function accepts ETH (`msg.value`) but does not debit or track the received amount. The ETH accumulates in the contract's balance and becomes spendable by subsequent callers via functions that use `address(this).balance` or `call{value:}` with contract funds. Pattern: payable function receives ETH for gas/fees but doesn't account for it; later function forwards contract balance elsewhere.
+- **FP:** `msg.value` tracked in internal accounting (credited to user's balance mapping). Excess `msg.value` refunded. Contract never uses `address(this).balance` for operations (only internal tracked balances).
+
+**208. Router/Aggregator Balance Theft**
+
+- **D:** Intermediary contract (router, aggregator, relayer) transiently holds user funds during multi-step operations. If any code path uses `address(this).balance` or `IERC20(token).balanceOf(address(this))` as the amount to forward/transfer (instead of tracking the user's specific deposit), any subsequent caller can claim those funds. Pattern: Router holds TokenA from a failed swap; attacker calls swap with `_amount = balanceOf(router)` to steal it.
+- **FP:** Router never holds funds beyond a single transaction (atomic execution guaranteed). All operations use `msg.value` or tracked per-user balances, never `address(this).balance`. Sweep function protected by admin-only access.
+
+**209. Parameter Trust Boundary Violation**
+
+- **D:** Function trusts a caller-supplied parameter for a security-critical decision — which token to send, which address to credit, which amount to use, which pool to interact with — without independently validating it against on-chain state or prior computation. The parameter crosses a trust boundary: external (untrusted caller) to internal (trusted operation). Pattern: user supplies `_outputToken` parameter, function calls `safeTransfer(_outputToken, user, amount)` without verifying `_outputToken` was actually produced by the swap.
+- **FP:** All caller-supplied parameters used in fund operations are validated against protocol state (pool registries, path outputs, computed values). Function derives critical parameters internally rather than accepting them from caller.
+
+**210. Payable Function Missing Value Check**
+
+- **D:** Function marked `payable` but performs ETH-dependent operations without checking `msg.value`. If `msg.value == 0`, the function either: (a) proceeds with zero ETH but uses contract balance, (b) no-ops on the ETH portion but still performs token operations, creating an inconsistent state, or (c) allows a conditional branch (e.g., `if nativeSend`) to execute without the caller providing ETH. Pattern: `anyToAnySwap{value:0}(nativeSend=true, amount=X)` — nativeSend branch triggers, but msg.value is 0, so contract's own ETH is spent.
+- **FP:** `require(msg.value > 0)` when ETH is expected. `require(msg.value == _amount)` enforced. Non-payable function (compiler rejects ETH). `msg.value` is the sole source of the amount (no separate parameter).

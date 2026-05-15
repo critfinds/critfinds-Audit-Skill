@@ -1,6 +1,6 @@
 ---
 name: critfindsaudit
-description: Attacker-grade EVM/Solidity security audit. Trigger with "/critfindsaudit", "/critfindsaudit DEEP", or "/critfindsaudit path/to/file.sol". Finds critical/high/medium vulnerabilities with concrete exploit paths.
+description: Attacker-grade EVM/Solidity security audit. Trigger with "/critfindsaudit", "/critfindsaudit DEEP", or "/critfindsaudit path/to/file.sol". Finds critical/high/medium vulnerabilities with concrete exploit paths. 230 attack vectors + free hunting pass.
 ---
 
 # CritFindsAudit v2 — Attacker-Grade Audit Engine
@@ -48,6 +48,13 @@ _safeMint safeTransferFrom onERC721Received onERC1155Received
 multicall "msg.value" "balanceOf(address(this))"
 initialize _authorizeUpgrade upgradeToAndCall
 permit approve transferOwnership renounceOwnership
+swapCallback flashLoan onFlashLoan "flash("
+resolve settle redeem "split(" "merge("
+sweep rescue emergencyWithdraw pause whenNotPaused
+execute "propose(" "queue(" "delegate("
+"hook" "beforeSwap" "afterSwap" "beforeDeposit" "afterDeposit"
+"resolver" "executor" "relayer" "fillOrder" "partialFill"
+"receive()" "fallback()" payable
 ```
 Print a summary: `Danger scan: N total hits across M files. Hottest files: [top 5 files by hit count]`. This context is appended to each agent's prompt as `## Recon Context`.
 
@@ -57,7 +64,7 @@ Print a summary: `Danger scan: N total hits across M files. Hottest files: [top 
 
 - **QUICK mode**: spawn Agents 1-2 only.
 - **Default mode**: spawn Agents 1-4.
-- **DEEP mode**: spawn Agents 1-4 plus Agent 5 and Agent 6.
+- **DEEP mode**: spawn Agents 1-4 plus Agent 5, Agent 6, and Agent 7.
 
 Agent specs:
 
@@ -78,7 +85,17 @@ Agent specs:
   1. Identify every mathematical/economic invariant the protocol must maintain (e.g., totalShares * pricePerShare == totalAssets, sum(balances) == totalSupply, k = x * y for AMMs).
   2. For each invariant, trace all code paths that modify the involved variables.
   3. Check if any path can break the invariant (especially: fee collection, rounding, emergency functions, donation/direct-transfer, flash loan manipulation).
-  4. Format findings per report-formatting.md. Only report invariant violations with concrete attack paths. Apply the FP gate from judging.md.
+  4. Format findings per report-formatting.md. Only report invariant violations with concrete attack paths. Apply the 4-gate FP system from judging.md.
+  Reference directory: {resolved_path}
+  In-scope files: [list]
+  ```
+
+- **Agent 7** (integration & L2 specialist, DEEP only) — spawn with `model: "opus"`. Prompt:
+  ```
+  You are an integration and L2 security specialist. Read all in-scope .sol files. Your job:
+  1. Identify all points of integration with external protocols (Oracles, DEXs, Bridges, Flash Loans, Cross-chain messages).
+  2. Hunt for integration desyncs: Read-only reentrancy, stale oracle prices, L2 sequencer downtime edge cases, cross-chain replay, and fee-on-transfer token assumptions.
+  3. Format findings per report-formatting.md. Explicitly state the downstream victim. Apply the 4-gate FP system from judging.md.
   Reference directory: {resolved_path}
   In-scope files: [list]
   ```
@@ -107,6 +124,6 @@ Before doing anything else, print this exactly:
 ╚██████╗██║  ██║██║   ██║   ██║     ██║██║ ╚████║██████╔╝███████║
  ╚═════╝╚═╝  ╚═╝╚═╝   ╚═╝   ╚═╝     ╚═╝╚═╝  ╚═══╝╚═════╝ ╚══════╝
               Attacker-Grade Audit Engine v2
-         200 Vectors | 6 Agents | Zero FP Tolerance
+         230 Vectors | 7 Agents | Zero FP (4 Gates)
 
 ```

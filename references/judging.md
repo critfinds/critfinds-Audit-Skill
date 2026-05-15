@@ -19,19 +19,62 @@ Each finding passes a false-positive gate, then gets a confidence score and seve
 5. If impact is griefing, DoS, or edge-case loss under unusual conditions -> MEDIUM
 6. If you're unsure between two severities, choose the lower one.
 
-## FP Gate
+## "Investigate-First" FP Gate
 
-Every finding must pass all three checks. If any check fails, drop the finding — do not score or report it.
+Every finding must pass ALL FOUR gates of the zero-tolerance False Positive (FP) policy. If any gate fails, drop the finding — but internally you MUST name the specific reason or guard when dropping.
 
-1. **Concrete attack path exists:** You can trace caller -> function call -> state change -> loss/impact. Evaluate what the code _allows_, not what the deployer _might choose_. If you cannot write the exact sequence of function calls an attacker would make, it is not a finding.
-2. **Entry point is reachable:** The attack entry point is callable by the attacker (check modifiers, `msg.sender` guards, `onlyOwner`, `onlyRole`, access control). If the function is admin-only and the attacker needs admin access, the finding still passes but gets a -25 confidence deduction.
-3. **No existing guard prevents it:** No `require`, `if`-revert, reentrancy lock, allowance check, or other mechanism already blocks the attack path. Check the FULL call chain, not just the immediate function.
+**Default posture: INVESTIGATE, not DROP.** Assume a finding is real until you can prove otherwise with a specific, named guard. The absence of the exact named pattern is NOT sufficient to drop — you must verify the underlying vulnerability concept is also inapplicable.
+
+1. **GATE 1: THE EXECUTION PATHWAY:** Does a mathematically valid execution path exist that allows an external attacker to reach the vulnerable code? If the function is protected by `onlyOwner` or a trusted multisig, DISCARD immediately unless you can prove a concrete privilege escalation vector (e.g., signature replay, cross-chain bridge manipulation).
+2. **GATE 2: THE ATOMIC REVERT CHECK:** If the exploit requires manipulating state out-of-order, does the transaction atomically revert if the final check fails? If standard EVM atomic rollbacks (like SafeMath underflows or end-of-execution require statements) protect the transaction, DISCARD the finding. It is visually suspicious but mathematically safe.
+3. **GATE 3: THE FINANCIAL IMPACT MANDATE (PROOF OF DAMAGE):** Does this vulnerability lead to direct protocol insolvency, permanent locking of funds, or manipulation of an IN-SCOPE downstream integration? If the impact is "users might get confused," "event emitted late," or "theoretical loss of dust," DISCARD the finding. You only report blood.
+4. **GATE 4: THE REPRODUCIBILITY REQUIREMENT:** Can this attack be mathematically proven using Foundry (via fuzzing) or Echidna (via invariant breaks)? You must be able to conceptualize a concrete PoC that proves the exploit on a live mainnet fork.
+
+### Drop Justification Requirement
+
+When dropping a finding via the FP gate, you MUST provide an explicit justification referencing the specific gate failed:
+
+```
+DROP: failed Gate X because [specific reason or guard] at [file:line]
+```
+
+Examples of valid drop justifications:
+- `DROP: failed Gate 2 because transaction reverts on require(amountOut >= minOut) at Router.sol:L142`
+- `DROP: failed Gate 1 because guarded by onlyOwner modifier at Vault.sol:L88`
+- `DROP: failed Gate 3 because impact is only 1 wei of dust lost during division.`
+- `DROP: failed Gate 1 because architectural — contract never holds ETH (no receive/fallback, no payable functions)`
+
+**Invalid drop justifications (these CANNOT be used to drop):**
+- "I don't see the exact pattern described in the vector"
+- "The named construct isn't present in the codebase"
+- "Pattern doesn't seem to apply" (vague, no specific guard named)
+
+### Concept Over Pattern Rule
+
+Vectors describe vulnerability concepts, not just specific code patterns. When evaluating a vector:
+
+1. First, check if the literal named construct is present.
+2. If NOT present, check if the **underlying vulnerability concept** could manifest through a different mechanism.
+3. A vector is only droppable if BOTH the named construct AND the underlying concept are absent, OR if a specific guard prevents exploitation.
+
+Example: Vector "msg.value reuse in multicall" — the concept is "ETH amount can be spent multiple times or exceeds what the caller sent." Even without multicall, if a payable function has a separate amount parameter that can diverge from msg.value, the concept applies.
 
 ## Confidence Score
 
 Confidence measures certainty that the finding is real and exploitable — not how severe it is. Every finding that passes the FP gate starts at **100**.
 
-**Deductions (apply all that fit, minimum score is 20):**
+### Confidence Floors
+
+Certain finding types have minimum confidence floors that deductions cannot breach:
+
+| Condition | Confidence Floor |
+|-----------|-----------------|
+| Agent can construct concrete 3+ step attack scenario with specific function calls and named parameters | Floor: 90 (deductions cannot reduce below 90) |
+| Finding is "missing input validation on fund-critical path" — user-controlled parameter reaches fund transfer without validation | Floor: 85 (deductions cannot reduce below 85, UNLESS privileged caller required — then floor is 60) |
+
+### Deductions
+
+**Deductions (apply all that fit, but respect the floors above; absolute minimum score is 20):**
 
 | Condition | Deduction |
 |-----------|-----------|
@@ -41,6 +84,8 @@ Confidence measures certainty that the finding is real and exploitable — not h
 | Requires specific external conditions (token type, market state, oracle timing) | -10 |
 | Requires multi-block coordination or validator collusion | -10 |
 | Similar pattern exists in battle-tested protocols without known exploits | -5 |
+
+**Only deduct confidence for specific mitigating factors the agent can name.** Generic uncertainty ("I'm not sure this works") is NOT a valid deduction reason. Each deduction must cite the specific mitigating factor.
 
 Confidence indicator: `[score]` (e.g., `[95]`, `[75]`, `[60]`).
 

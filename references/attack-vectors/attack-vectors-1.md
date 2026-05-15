@@ -1,6 +1,6 @@
 # Attack Vectors Reference (1/4)
 
-200 total attack vectors — Reentrancy, Access Control, Arithmetic, Oracle & Price, Flash Loans
+230 total attack vectors — Reentrancy, Access Control, Arithmetic, Oracle & Price, Flash Loans, Callbacks & External Calls
 
 ---
 
@@ -267,3 +267,31 @@
 
 - **D:** `(bool success, bytes memory data) = target.call(payload)` where `target` is user-supplied. Malicious target returns huge returndata; copying costs enormous gas.
 - **FP:** Returndata not copied (assembly call without copy). Gas-limited call. Target is hardcoded trusted contract.
+
+---
+
+**211. Callback Trust Without Sender Validation**
+
+- **D:** Contract receives callbacks (swap callbacks, flash loan callbacks, hook calls, `onFlashLoan`, `uniswapV3SwapCallback`, `pancakeV3SwapCallback`) without validating the callback originates from the expected source. Attacker calls the callback function directly with fabricated data to credit themselves tokens, mint shares, or manipulate state. Pattern: `uniswapV3SwapCallback(int256, int256, bytes)` is `external` but doesn't check `msg.sender == expectedPool`.
+- **FP:** `require(msg.sender == expectedPool/lender)` validated. Callback is `internal`/`private`. Callback validates a secret nonce or hash that only the real caller knows.
+
+**212. Return Value Reliance Without Verification**
+
+- **D:** Function trusts return values from external calls to untrusted/user-supplied contracts without independent verification. Pattern: DEX `swap()` returns `amountOut`, caller credits user `amountOut` tokens without checking actual balance change. Malicious pool returns inflated `amountOut`. Also: `decimals()` on untrusted token returns 0 or 77, breaking all math.
+- **FP:** Balance-before/after check used instead of return value. Return value cross-validated against independent source. External contract is trusted/immutable. Return value not used for fund-critical decisions.
+
+**213. Sweep/Rescue Function Draining User Funds**
+
+- **D:** Admin `sweep(token)` or `rescueTokens(token, amount)` function intended for stuck/airdropped tokens can drain tokens that users have actively deposited. Function sends `balanceOf(address(this))` or arbitrary `amount` to admin without subtracting user-tracked balances. Pattern: `sweep(USDC)` drains all USDC including active user deposits because it uses raw `balanceOf`.
+- **FP:** Sweep excludes staking/deposit token: `require(token != stakingToken)`. Amount limited to `balanceOf - totalDeposited`. Sweep token whitelist maintained. No sweep function exists.
+
+**214. Emergency Pause Permanent Fund Lockup**
+
+- **D:** Emergency pause blocks withdrawals indefinitely with no escape hatch, no time-limited pause duration, and no alternative withdrawal path. If admin key is lost, compromised, or admin maliciously pauses, user funds are permanently locked. Pattern: `whenNotPaused` modifier on all withdrawal functions, no `emergencyWithdraw()`, no auto-unpause timer.
+- **FP:** Time-limited pause (auto-expires after N blocks). Emergency withdraw bypasses pause. Pause controlled by multisig + timelock. Alternative withdrawal path exists.
+
+**215. Unchecked External Call Success With Side Effects**
+
+- **D:** External call failure is silently ignored but subsequent code assumes it succeeded. Internal accounting already debited/credited the amount. Pattern: `(bool success, ) = token.call(abi.encodeWithSelector(IERC20.transfer.selector, to, amount));` without checking `success` — tokens not sent but balance mapping already decremented. Also: low-level call to a contract that doesn't exist returns `success=true` with no code execution (Solmate SafeTransferLib issue).
+- **FP:** `require(success)` or `SafeERC20.safeTransfer` used. Return value checked. Contract existence verified via `code.length > 0`. Balance-before/after verification.
+

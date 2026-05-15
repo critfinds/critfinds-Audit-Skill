@@ -1,6 +1,6 @@
 # Attack Vectors Reference (3/4)
 
-200 total attack vectors — Cross-Chain & Bridge, Gas & DoS, EVM Hazards, Governance, NFT-Specific
+230 total attack vectors — Cross-Chain & Bridge, Gas & DoS, EVM Hazards, Governance, NFT-Specific, L2 & Settlement
 
 ---
 
@@ -263,3 +263,31 @@
 
 - **D:** Child contract declares state variable with same name as parent. Parent's variable becomes inaccessible. Reads/writes hit wrong slot.
 - **FP:** Compiler warning addressed. No variable shadowing. Unique naming convention.
+
+---
+
+**226. Governance Delegation Chain Exploit**
+
+- **D:** Circular or deep delegation chains break vote counting or create exploitable states. Pattern: A delegates to B, B delegates to A — votes counted twice, not at all, or gas DoS on vote counting due to infinite loop. Also: delegation depth exceeding gas limits causes `getPastVotes()` to revert, blocking proposals that depend on that voter's participation. Flash loan → delegate → vote → undelegate → return in single block.
+- **FP:** Circular delegation prevented: `require(delegatee != msg.sender)` with chain traversal. Maximum delegation depth enforced. Delegation snapshot at prior block prevents same-block manipulation.
+
+**227. Proposal Execution Payload Injection**
+
+- **D:** Governance proposal contains arbitrary calldata for execution. Proposer embeds malicious operations alongside legitimate ones — voters approve the visible title/description but miss the embedded exploit in the raw calldata. Pattern: proposal titled "Upgrade oracle" includes `approve(attacker, MAX_UINT)` as an additional call in the batch. Also: proposal with `delegatecall` to attacker contract that steals treasury.
+- **FP:** All proposal actions displayed to voters (UI shows decoded calldata). Timelock allows guardian veto. Proposal actions limited to approved function selectors. No arbitrary `delegatecall` in executor.
+
+**228. L2 Sequencer Grace Period Exploitation**
+
+- **D:** After L2 sequencer comes back online, positions opened/modified during downtime get favorable treatment because oracle prices haven't updated yet. Grace period is too short or non-existent. Pattern: sequencer goes down → oracle price stale at $2000/ETH → sequencer restarts → ETH is actually $1800 → attacker borrows at stale $2000 price → profit on $200/ETH difference before oracle updates. Also: forced transactions via L1 during sequencer downtime bypass protocol protections.
+- **FP:** `sequencerUptimeFeed` checked with adequate grace period (>= 1 hour). All operations paused during sequencer downtime. Oracle freshness checked independently of sequencer.
+
+**229. Cross-Chain Message Value Mismatch**
+
+- **D:** Cross-chain message carries a value/amount field that doesn't match the actual tokens locked on the source chain. Destination chain mints/releases based on the message amount, not the actual lock. Pattern: bridge `send(100 ETH)` but only locks 1 ETH on source — message says 100 ETH — destination releases 100 ETH. Also: decimal conversion errors between chains (18 decimal chain to 6 decimal chain), message replay with inflated amounts, or race condition between lock and message send.
+- **FP:** Message amount derived from actual locked amount (event-based verification). Merkle proof of lock transaction required. Rate limits cap per-message amount. Decimal normalization verified in tests.
+
+**230. Time-Weighted Balance Manipulation**
+
+- **D:** Protocol uses time-weighted average balance (TWAB) for rewards, governance power, or fee calculations. Attacker maintains large balance briefly before snapshot/checkpoint and small balance otherwise, gaming the time-weighted calculation with minimal capital lockup. Pattern: deposit large amount 1 block before checkpoint, receive disproportionate time-weighted rewards, withdraw immediately after. Also: manipulating TWAB by stacking deposits at end of period and withdrawing at start.
+- **FP:** TWAB uses per-second granularity (not per-block/per-checkpoint). Minimum observation period longer than manipulation window. Rewards proportional to actual time-weighted balance with sufficient history. Deposits locked through observation period.
+

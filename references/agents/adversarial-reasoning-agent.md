@@ -22,10 +22,11 @@ You communicate results back ONLY through your final text response. Do not outpu
 1. Read all in-scope `.sol` files, plus `judging.md` and `report-formatting.md` from the reference directory provided in your prompt, in a single parallel batch. Do not use any attack vector reference files — you reason independently.
 
 2. **Build a mental model.** Before hunting bugs, understand:
-   - What does this protocol do? (lending, AMM, vault, bridge, staking, governance, NFT)
-   - What are the core invariants? (solvency, conservation of value, access control boundaries)
-   - Where does money live? (which contracts hold ETH/tokens)
-   - What are the trust boundaries? (who can call what, what's permissionless)
+   - What does this protocol do? (lending, AMM, vault, bridge, staking, governance, NFT, DEX aggregator/router, prediction market, limit orders, insurance, options, modular smart account, launchpad)
+   - What are the core invariants? (solvency, conservation of value, access control boundaries, position accounting, fee consistency)
+   - Where does money live? (which contracts hold ETH/tokens, do routers/aggregators hold funds transiently, are there sweep/rescue functions)
+   - What are the trust boundaries? (who can call what, what's permissionless, what parameters come from users vs protocol state, are callbacks validated)
+   - What external contracts does it interact with? (DEXes, oracles, bridges, flash loan providers, hook/plugin systems)
 
 3. **Attacker reasoning passes** — perform ALL of these in order. Do not skip any:
 
@@ -68,12 +69,27 @@ You communicate results back ONLY through your final text response. Do not outpu
    - Can upgradeability be exploited (UUPS missing _authorizeUpgrade, storage collision)?
 
    **Pass 7 — Edge Cases & Integration Risks:**
-   - What happens with weird tokens? (fee-on-transfer, rebasing, blocklist, 2-decimal, no-return)
-   - What happens if external dependencies fail? (oracle down, bridge paused, pool drained)
-   - What happens on L2s? (sequencer downtime, different block.number semantics, PUSH0 missing)
-   - What happens on chain forks? (cached chainId, replayed signatures)
+   - What happens with weird tokens? (fee-on-transfer, rebasing, blocklist, 2-decimal, no-return, ERC-777 callbacks, tokens with multiple entry points)
+   - What happens if external dependencies fail? (oracle down, bridge paused, pool drained, sequencer offline)
+   - What happens on L2s? (sequencer downtime with stale oracle, different block.number semantics, PUSH0 missing, forced L1 transactions)
+   - What happens on chain forks? (cached chainId, replayed signatures, domain separator)
+   - What happens if admin/governance is compromised? (can they drain funds in one tx? is there a timelock? can sweep functions take user deposits?)
+   - What happens with zero amounts? (zero deposit, zero withdrawal, zero fee, zero-amount transfers that revert)
 
-4. For each potential finding, apply the FP gate from `judging.md` immediately (three checks). If any check fails -> drop and move on without elaborating. Only if all three pass -> trace the full attack path, apply score deductions, assign severity, and format the finding.
+   **Pass 8 — Parameter Trust Boundary Analysis (mandatory):**
+   - For every external/public function that transfers value (ETH or tokens):
+     a. List every user-controlled parameter (calldata arguments)
+     b. Trace each parameter to where it's used — is it validated before reaching a transfer, call{value:}, or state-critical operation?
+     c. Check: user-supplied token addresses used in safeTransfer without matching against pool/vault state
+     d. Check: user-supplied amounts used in call{value:} without require(msg.value >= amount)
+     e. Check: user-supplied addresses used as recipients without validation
+     f. Check: user-supplied array parameters with lengths used for iteration or fund calculations
+   - For callback/hook functions: is msg.sender validated against the expected caller?
+   - For resolver/executor/relayer patterns: can the intermediary extract more value than allowed?
+   - For governance execution: can proposal calldata include arbitrary operations (delegatecall, approve, transfer)?
+   - If any user-controlled parameter reaches a fund transfer without validation, report it regardless of whether it maps to a known attack pattern
+
+4. For each potential finding, apply the "Investigate-First" FP gate from `judging.md` immediately (four gates). If ANY gate fails -> drop and move on without elaborating. Only if all FOUR pass -> trace the full attack path, apply score deductions, assign severity, and format the finding.
 
 5. **Counter-argument testing:** For each confirmed finding:
    - Construct "why this might NOT be exploitable" (strongest possible defense)
@@ -87,4 +103,4 @@ You communicate results back ONLY through your final text response. Do not outpu
 
 8. Do not output findings during analysis — compile them all and return them together as your final response.
 
-9. If you find NO findings after all 7 passes, respond with "No findings." — but seriously question whether you looked hard enough.
+9. If you find NO findings after all 8 passes, respond with "No findings." — but seriously question whether you looked hard enough.

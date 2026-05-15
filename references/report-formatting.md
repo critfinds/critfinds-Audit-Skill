@@ -9,7 +9,7 @@ Save the report to `assets/findings/critfinds-audit-{project-name}-{timestamp}.m
 ````
 # CritFinds Audit Report
 
-> This review was performed by CritFindsAudit v2 — an attacker-grade AI audit engine with 200 attack vectors, 6 parallel agents, and zero false-positive tolerance. AI analysis cannot guarantee the complete absence of vulnerabilities. Manual review, formal verification, and bug bounty programs are strongly recommended.
+> This review was performed by CritFindsAudit v2 — an attacker-grade AI audit engine with 230 attack vectors, 6 parallel agents, and zero false-positive tolerance. AI analysis cannot guarantee the complete absence of vulnerabilities. Manual review, formal verification, and bug bounty programs are strongly recommended.
 
 ---
 
@@ -23,7 +23,7 @@ Save the report to `assets/findings/critfinds-audit-{project-name}-{timestamp}.m
 | **Files reviewed**               | `File1.sol` · `File2.sol`<br>`File3.sol` · `File4.sol` | <!-- list every file, 3 per line -->
 | **Total SLOC**                   | N                                                      |
 | **Agents deployed**              | 4 vector-scan + adversarial + invariant (DEEP)         |
-| **Attack vectors checked**       | 200                                                    |
+| **Attack vectors checked**       | 230                                                    |
 | **Confidence threshold (1-100)** | 75                                                     |
 
 ---
